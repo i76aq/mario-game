@@ -1,0 +1,175 @@
+
+<canvas id="c" width="680" height="360" style="display:block;border-radius:12px;width:100%;cursor:pointer;"></canvas>
+<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 2px;font-size:12px;color:var(--text-muted);">
+  <span>← → للتحرك &nbsp;|&nbsp; SPACE / ↑ للقفز &nbsp;|&nbsp; دوس الأعداء</span>
+  <span id="sc">⭐ 0 &nbsp; ❤️ 3</span>
+</div>
+<div style="display:flex;justify-content:space-between;padding:4px 0 0;gap:8px;">
+  <div style="display:flex;gap:8px;">
+    <button id="bL" style="padding:10px 20px;font-size:16px;border-radius:var(--radius);border:0.5px solid var(--border-strong);background:var(--surface-1);color:var(--text-primary);cursor:pointer;">←</button>
+    <button id="bR" style="padding:10px 20px;font-size:16px;border-radius:var(--radius);border:0.5px solid var(--border-strong);background:var(--surface-1);color:var(--text-primary);cursor:pointer;">→</button>
+  </div>
+  <button id="bJ" style="padding:10px 28px;font-size:14px;border-radius:var(--radius);border:0.5px solid var(--border-strong);background:var(--surface-1);color:var(--text-primary);cursor:pointer;">JUMP ↑</button>
+</div>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=680,H=360;
+const G=0.48,JV=-11,SP=4,CW=680;
+const keys={};
+let score,lives,camX,gs,mario,plats,pipes,coins,enemies,chunks;
+
+function init(){
+  score=0;lives=3;camX=0;gs='start';
+  mario={x:80,y:260,w:28,h:36,vx:0,vy:0,og:false,dir:1,dead:false,dt:0,inv:0};
+  plats=[];pipes=[];coins=[];enemies=[];chunks=new Set();
+  for(let i=0;i<4;i++) genChunk(i);
+}
+
+function genChunk(i){
+  if(chunks.has(i))return; chunks.add(i);
+  const ox=i*CW,gy=H-55;
+  const gap=i>0&&Math.random()<0.3;
+  const gs2=ox+200+Math.random()*280,ge=gs2+55+Math.random()*50;
+  for(let x=ox;x<ox+CW;x+=40){
+    if(gap&&x>gs2&&x<ge)continue;
+    plats.push({x,y:gy,w:40,h:60,t:'g'});
+  }
+  for(let b=0;b<2+Math.floor(Math.random()*2);b++){
+    const bx=ox+80+Math.random()*(CW-200),by=gy-80-Math.random()*70,bw=2+Math.floor(Math.random()*3);
+    for(let j=0;j<bw;j++) plats.push({x:bx+j*36,y:by,w:36,h:24,t:'b'});
+    for(let j=0;j<bw;j++) coins.push({x:bx+j*36+18,y:by-20,r:8,c:false,a:Math.random()*6.28});
+  }
+  if(Math.random()<0.45){
+    const ph=50+Math.floor(Math.random()*3)*20;
+    pipes.push({x:ox+120+Math.random()*(CW-240),y:gy-ph+8,w:48,h:ph});
+  }
+  for(let e=0;e<1+Math.floor(Math.random()*3);e++){
+    enemies.push({x:ox+150+Math.random()*(CW-200),y:gy-28,w:28,h:28,vx:(Math.random()<0.5?-1:1)*1.2,vy:0,alive:true,sq:false,st:0});
+  }
+}
+
+function ensure(){
+  const c=Math.floor(camX/CW);
+  for(let i=Math.max(0,c-1);i<=c+3;i++) genChunk(i);
+  const m=camX-CW*2;
+  plats=plats.filter(p=>p.x>m);pipes=pipes.filter(p=>p.x>m);
+  coins=coins.filter(c=>c.x>m);enemies=enemies.filter(e=>e.x>m);
+}
+
+function col(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+
+function update(){
+  if(gs!=='play')return;
+  if(mario.dead){
+    mario.vy+=G;mario.y+=mario.vy;mario.dt++;
+    if(mario.dt>90){lives--;if(lives<=0){gs='over';return;}mario={...mario,x:Math.max(80,camX+60),y:240,vx:0,vy:0,og:false,dead:false,dt:0,inv:60};}
+    return;
+  }
+  if(mario.inv>0)mario.inv--;
+  if(keys['ArrowLeft']||keys['a'])mario.vx-=1;
+  else if(keys['ArrowRight']||keys['d'])mario.vx+=1;
+  else mario.vx*=0.72;
+  mario.vx=Math.max(-SP,Math.min(SP,mario.vx));
+  if(Math.abs(mario.vx)>0.1)mario.dir=mario.vx>0?1:-1;
+  mario.vy+=G;mario.x+=mario.vx;mario.y+=mario.vy;
+  mario.x=Math.max(0,mario.x);mario.og=false;
+  const solids=[...plats,...pipes.map(p=>({...p,t:'p'}))];
+  solids.forEach(p=>{
+    if(!col(mario,p))return;
+    const ox=Math.min(mario.x+mario.w,p.x+p.w)-Math.max(mario.x,p.x);
+    const oy=Math.min(mario.y+mario.h,p.y+p.h)-Math.max(mario.y,p.y);
+    if(oy<=ox){if(mario.y+mario.h/2<p.y+p.h/2){mario.y=p.y-mario.h;mario.vy=0;mario.og=true;}else{mario.y=p.y+p.h;mario.vy*=0.2;}}
+    else{if(mario.x+mario.w/2<p.x+p.w/2)mario.x=p.x-mario.w;else mario.x=p.x+p.w;mario.vx=0;}
+  });
+  if((keys[' ']||keys['ArrowUp']||keys['w'])&&mario.og){mario.vy=JV;mario.og=false;}
+  camX=Math.max(0,mario.x-W*0.33);ensure();
+  if(mario.y>H+80){mario.dead=true;mario.vy=-8;return;}
+  coins.forEach(c=>{c.a+=0.07;if(!c.c&&Math.hypot(mario.x+mario.w/2-c.x,mario.y+mario.h/2-c.y)<c.r+16){c.c=true;score+=10;}});
+  score=Math.max(score,Math.floor(mario.x/10));
+  enemies.forEach(e=>{
+    if(!e.alive)return;
+    if(e.sq){e.st--;if(e.st<=0)e.alive=false;return;}
+    e.x+=e.vx;e.vy=(e.vy||0)+G;e.y+=e.vy;
+    plats.forEach(p=>{
+      if(!col(e,p))return;
+      const oy=Math.min(e.y+e.h,p.y+p.h)-Math.max(e.y,p.y);
+      const ox=Math.min(e.x+e.w,p.x+p.w)-Math.max(e.x,p.x);
+      if(oy<ox){if(e.y+e.h/2<p.y+p.h/2){e.y=p.y-e.h;e.vy=0;}else{e.y=p.y+p.h;e.vy=0;}}
+      else e.vx*=-1;
+    });
+    if(e.y>H+60){e.alive=false;return;}
+    if(mario.inv>0)return;
+    if(col(mario,e)){
+      if(mario.vy>0&&mario.y+mario.h<e.y+e.h*0.5+8){e.sq=true;e.st=28;mario.vy=-8;score+=100;}
+      else if(!mario.dead){mario.dead=true;mario.vy=-10;}
+    }
+  });
+  document.getElementById('sc').textContent='⭐ '+score+' \u00a0 ❤️ '+lives;
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  const sk=ctx.createLinearGradient(0,0,0,H);
+  sk.addColorStop(0,'#0d0030');sk.addColorStop(1,'#3a0a8c');
+  ctx.fillStyle=sk;ctx.fillRect(0,0,W,H);
+  [[100,45],[320,30],[560,55],[800,38]].forEach(([x,y])=>cloud(x-camX*0.12,y));
+  pipes.forEach(p=>{const bx=p.x-camX;if(bx>-60&&bx<W+60){ctx.fillStyle='#00a800';ctx.fillRect(bx+3,p.y+16,p.w-6,p.h-16);ctx.fillStyle='#006400';ctx.fillRect(bx+3+(p.w-6)*0.65,p.y+16,(p.w-6)*0.2,p.h-16);ctx.fillStyle='#00a800';ctx.fillRect(bx,p.y,p.w,16);ctx.fillStyle='#006400';ctx.fillRect(bx+p.w*0.65,p.y,p.w*0.2,16);}});
+  plats.forEach(p=>{const bx=p.x-camX;if(bx>-60&&bx<W+60){if(p.t==='g'){ctx.fillStyle='#2d8c00';ctx.fillRect(bx,p.y,p.w,8);ctx.fillStyle='#5a3010';ctx.fillRect(bx,p.y+8,p.w,p.h-8);}else{ctx.fillStyle='#c84b11';ctx.fillRect(bx,p.y,p.w,p.h);ctx.fillStyle='#a03800';ctx.fillRect(bx,p.y+p.h/2-1,p.w,2);ctx.fillRect(bx+p.w/2-1,p.y,2,p.h/2);}}});
+  coins.forEach(c=>{if(!c.c){const sx=Math.cos(c.a)*c.r,bx=c.x-camX;if(bx>-20&&bx<W+20){ctx.fillStyle='#ffd700';ctx.beginPath();ctx.ellipse(bx,c.y,Math.abs(sx),c.r,0,0,Math.PI*2);ctx.fill();}}});
+  enemies.forEach(e=>{if(!e.alive)return;const bx=e.x-camX;if(bx<-40||bx>W+40)return;const by=e.sq?e.y+e.h-6:e.y,bh=e.sq?6:e.h;ctx.fillStyle='#c84b11';ctx.fillRect(bx,by,e.w,bh*0.7);if(!e.sq){ctx.beginPath();ctx.arc(bx+e.w/2,by,e.w/2,Math.PI,0);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(bx+4,by-2,8,6);ctx.fillRect(bx+16,by-2,8,6);ctx.fillStyle='#000';ctx.fillRect(bx+6,by-1,4,4);ctx.fillRect(bx+18,by-1,4,4);const wk=Math.sin(Date.now()/100)*3;ctx.fillStyle='#5a2000';ctx.fillRect(bx+2,by+bh*0.7,8,7+wk);ctx.fillRect(bx+18,by+bh*0.7,8,7-wk);}});
+  drawM();
+  if(gs==='start'||gs==='over')overlay();
+}
+
+function cloud(x,y){ctx.fillStyle='rgba(255,255,255,0.12)';ctx.beginPath();ctx.arc(x,y,15,0,6.28);ctx.arc(x+20,y-5,19,0,6.28);ctx.arc(x+40,y,15,0,6.28);ctx.fill();}
+
+function drawM(){
+  if(mario.dead)return;
+  if(mario.inv>0&&Math.floor(mario.inv/4)%2===0)return;
+  const bx=mario.x-camX,by=mario.y;
+  ctx.save();
+  if(mario.dir<0){ctx.translate(bx+mario.w/2,0);ctx.scale(-1,1);ctx.translate(-(bx+mario.w/2),0);}
+  ctx.fillStyle='#ff0000';ctx.fillRect(bx+2,by,24,8);ctx.fillRect(bx-2,by+6,30,4);
+  ctx.fillStyle='#f5cba7';ctx.fillRect(bx+4,by+10,20,10);
+  ctx.fillStyle='#000';ctx.fillRect(bx+16,by+12,4,4);
+  ctx.fillStyle='#5d3a1a';ctx.fillRect(bx+6,by+18,16,3);
+  ctx.fillStyle='#0000aa';ctx.fillRect(bx+2,by+20,24,10);
+  ctx.fillStyle='#ffd700';ctx.fillRect(bx+6,by+20,4,4);ctx.fillRect(bx+18,by+20,4,4);
+  const lg=mario.og&&Math.abs(mario.vx)>0.5?Math.sin(Date.now()/80)*4:0;
+  ctx.fillStyle='#c84b11';ctx.fillRect(bx+2,by+30,10,8+lg);ctx.fillRect(bx+16,by+30,10,8-lg);
+  ctx.fillStyle='#2c1810';ctx.fillRect(bx,by+36,14,6);ctx.fillRect(bx+14,by+36,14,6);
+  ctx.restore();
+}
+
+function overlay(){
+  ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';
+  ctx.fillStyle='#fff';ctx.font='bold 32px monospace';
+  ctx.fillText(gs==='start'?'🍄 MARIO':'GAME OVER 💀',W/2,H/2-36);
+  ctx.fillStyle='#ffd700';ctx.font='17px monospace';
+  ctx.fillText(gs==='start'?'اضغط للبدء':'النقاط: '+score,W/2,H/2+4);
+  ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='13px monospace';
+  ctx.fillText('SPACE / اضغط للعب',W/2,H/2+40);
+  ctx.textAlign='left';
+}
+
+function loop(){update();draw();requestAnimationFrame(loop);}
+
+document.addEventListener('keydown',e=>{keys[e.key]=true;if([' ','ArrowUp','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault();if((e.key===' ')&&(gs==='start'||gs==='over')){init();gs='play';}});
+document.addEventListener('keyup',e=>{keys[e.key]=false;});
+cv.addEventListener('click',()=>{if(gs==='start'||gs==='over'){init();gs='play';}});
+
+function hold(el,k){
+  el.addEventListener('touchstart',e=>{e.preventDefault();keys[k]=true;},{passive:false});
+  el.addEventListener('touchend',e=>{e.preventDefault();keys[k]=false;});
+  el.addEventListener('mousedown',()=>keys[k]=true);
+  el.addEventListener('mouseup',()=>keys[k]=false);
+  el.addEventListener('mouseleave',()=>keys[k]=false);
+}
+hold(document.getElementById('bL'),'ArrowLeft');
+hold(document.getElementById('bR'),'ArrowRight');
+const bj=document.getElementById('bJ');
+hold(bj,'ArrowUp');
+bj.addEventListener('touchstart',e=>{e.preventDefault();if(gs==='start'||gs==='over'){init();gs='play';}},{passive:false});
+
+init();loop();
+</script>
